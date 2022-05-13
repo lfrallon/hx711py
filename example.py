@@ -1,9 +1,14 @@
-#! /usr/bin/python2
+#! /opt/sbngscale/bin/python
 
+import math
+import re
 import time
+import serial
 import sys
 
 EMULATE_HX711=False
+STX='\x02'
+ETX='\x03'
 
 referenceUnit = 1
 
@@ -18,7 +23,7 @@ def cleanAndExit():
 
     if not EMULATE_HX711:
         GPIO.cleanup()
-        
+
     print("Bye!")
     sys.exit()
 
@@ -38,8 +43,8 @@ hx.set_reading_format("MSB", "MSB")
 # In this case, 92 is 1 gram because, with 1 as a reference unit I got numbers near 0 without any weight
 # and I got numbers around 184000 when I added 2kg. So, according to the rule of thirds:
 # If 2000 grams is 184000 then 1000 grams is 184000 / 2000 = 92.
-#hx.set_reference_unit(113)
-hx.set_reference_unit(referenceUnit)
+hx.set_reference_unit(459) # reference from 136 grams
+#hx.set_reference_unit(referenceUnit)
 
 hx.reset()
 
@@ -51,19 +56,47 @@ print("Tare done! Add weight now...")
 #hx.tare_A()
 #hx.tare_B()
 
+# Serail Com Configuration for E-Gizmo 4x2 LED Display Module
+ser = serial.Serial('/dev/ttyS0', baudrate=9600,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    bytesize=serial.EIGHTBITS
+                    )
+
 while True:
     try:
+        if not ser.is_open:
+            print("Opening Port...")
+            ser.open()
+
+        if ser.is_open:
+            val = hx.get_weight(5)
+            print("Sending Data...")
+            val = math.floor(val)
+            val = str(val)
+            val1 = re.sub("[-]","", val)
+            print(val1)
+
+            if len(val1) == 1:
+                val1 = '000'+val1
+            elif len(val1) == 2:
+                val1 = '00'+val1
+            elif len(val1) == 3:
+                val1 = '0'+val1
+            data = STX+'D'+val1+ETX
+            ser.write(data.encode())
+            #ser.flush()
         # These three lines are usefull to debug wether to use MSB or LSB in the reading formats
         # for the first parameter of "hx.set_reading_format("LSB", "MSB")".
         # Comment the two lines "val = hx.get_weight(5)" and "print val" and uncomment these three lines to see what it prints.
-        
+
         # np_arr8_string = hx.get_np_arr8_string()
         # binary_string = hx.get_binary_string()
-        # print binary_string + " " + np_arr8_string
-        
+        # print(binary_string + " " + np_arr8_string)
+
         # Prints the weight. Comment if you're debbuging the MSB and LSB issue.
-        val = hx.get_weight(5)
-        print(val)
+        # val = hx.get_weight(5)
+        # print(val)
 
         # To get weight from both channels (if you have load cells hooked up 
         # to both channel A and B), do something like this
@@ -76,4 +109,5 @@ while True:
         time.sleep(0.1)
 
     except (KeyboardInterrupt, SystemExit):
+        ser.close()
         cleanAndExit()
